@@ -8,6 +8,7 @@ import { Header } from '@/components/layout/header';
 import { PriceTable } from '@/components/price-table';
 import { AddProductForm } from '@/components/add-product-form';
 import { EditProductModal } from '@/components/edit-product-modal';
+import { DeleteProductSection } from '@/components/delete-product-section'; // Import the new component
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -29,15 +30,8 @@ interface LowestPriceInfo {
 }
 
 // --- Mock "Database" ---
-const initialMockData: PriceEntry[] = [
-  { id: '1', productName: 'Laptop', store: 'Amazon', price: 999.99 },
-  { id: '2', productName: 'Laptop', store: 'Best Buy', price: 1049.00 },
-  { id: '3', productName: 'Laptop', store: 'Walmart', price: 979.50 },
-  { id: '4', productName: 'Coffee Maker', store: 'Target', price: 45.00 },
-  { id: '5', productName: 'Coffee Maker', store: 'Amazon', price: 49.99 },
-  { id: '6', productName: 'Headphones', store: 'Best Buy', price: 199.00 },
-  { id: '7', productName: 'Headphones', store: 'Amazon', price: 179.95 },
-];
+// Removed initial mock data as requested
+const initialMockData: PriceEntry[] = [];
 
 export default function Home() {
   const { toast } = useToast();
@@ -56,7 +50,8 @@ export default function Home() {
   const [isAddFormVisible, setIsAddFormVisible] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<PriceEntry | null>(null);
-  const [isLoadingCrud, setIsLoadingCrud] = useState(false); // Loading state for add/edit/delete
+  const [isLoadingCrud, setIsLoadingCrud] = useState(false); // Loading state for add/edit/delete single entry
+  const [isLoadingDeleteProduct, setIsLoadingDeleteProduct] = useState(false); // Specific loading for deleting all entries of a product
 
   // Load initial data on mount (simulating fetching from backend)
   useEffect(() => {
@@ -89,8 +84,9 @@ export default function Home() {
       const results = allProducts.filter(p =>
         p.productName.toLowerCase().includes(productName.toLowerCase())
       );
-      if (results.length === 0 && productName.toLowerCase() !== 'empty') {
-         setSearchError(`No price information found for "${productName}".`);
+      if (results.length === 0 && productName.trim() && productName.toLowerCase() !== 'empty') {
+         // Only set error if search term is not empty and not 'empty'
+         setSearchError(`No price information found for "${productName}". You can add it below.`);
       }
       return results;
     } catch (error: any) {
@@ -158,10 +154,10 @@ export default function Home() {
         });
         // Optionally refresh search results if the new product matches current search
         if (searchTerm && newProduct.productName.toLowerCase().includes(searchTerm.toLowerCase())) {
-            setSearchResults(prev => [...prev, newProduct].sort((a,b) => a.price - b.price));
-             // Re-calculate lowest price
-            const lowest = findLowestPrice([...searchResults, newProduct]);
-            setLowestPriceInfo(lowest);
+           const refreshedResults = await fetchSearchResults(searchTerm); // Re-fetch to get all matching
+           setSearchResults(refreshedResults);
+           const lowest = findLowestPrice(refreshedResults);
+           setLowestPriceInfo(lowest);
         }
     } catch (error: any) {
         console.error("Add product error:", error);
@@ -180,18 +176,19 @@ export default function Home() {
     setIsEditModalOpen(true);
   };
 
-  const handleDeleteProduct = async (productId: string) => {
-     if (!confirm('Are you sure you want to delete this price entry?')) {
+  const handleDeleteSingleEntry = async (productId: string) => {
+     if (!confirm('Are you sure you want to delete this specific price entry?')) {
         return;
       }
     setIsLoadingCrud(true);
     await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API delay
      try {
+        const productToDelete = allProducts.find(p => p.id === productId);
         const updatedProducts = allProducts.filter(p => p.id !== productId);
         setAllProducts(updatedProducts);
         toast({
-            title: "Product Deleted",
-            description: "The price entry has been removed.",
+            title: "Price Entry Deleted",
+            description: `Entry for ${productToDelete?.productName} from ${productToDelete?.store} removed.`,
         });
          // Refresh search results if the deleted product was showing
         const updatedSearchResults = searchResults.filter(p => p.id !== productId);
@@ -201,10 +198,10 @@ export default function Home() {
         setLowestPriceInfo(lowest);
 
     } catch (error: any) {
-        console.error("Delete product error:", error);
+        console.error("Delete entry error:", error);
         toast({
-            title: "Error Deleting Product",
-            description: error.message || "Could not delete the product.",
+            title: "Error Deleting Entry",
+            description: error.message || "Could not delete the price entry.",
             variant: "destructive",
         });
     } finally {
@@ -228,19 +225,19 @@ export default function Home() {
       });
 
       // Refresh search results if the updated product matches current search
-       const updatedSearchResults = searchResults.map(p =>
-        p.id === updatedProduct.id ? updatedProduct : p
-      );
-      // Ensure the updated results still match the search term if product name changed
-      const finalSearchResults = updatedSearchResults.filter(p =>
-          p.productName.toLowerCase().includes(searchTerm.toLowerCase())
-      ).sort((a,b) => a.price - b.price);
+      if (searchTerm && updatedProduct.productName.toLowerCase().includes(searchTerm.toLowerCase())) {
+          const refreshedResults = await fetchSearchResults(searchTerm); // Re-fetch to ensure consistency
+          setSearchResults(refreshedResults);
+          const lowest = findLowestPrice(refreshedResults);
+          setLowestPriceInfo(lowest);
+      } else if (searchResults.some(p => p.id === updatedProduct.id)) {
+          // If the product was in results but name changed, remove it from current results
+          const filteredResults = searchResults.filter(p => p.id !== updatedProduct.id);
+           setSearchResults(filteredResults);
+           const lowest = findLowestPrice(filteredResults);
+           setLowestPriceInfo(lowest);
+      }
 
-      setSearchResults(finalSearchResults);
-
-      // Re-calculate lowest price
-      const lowest = findLowestPrice(finalSearchResults);
-      setLowestPriceInfo(lowest);
 
     } catch (error: any) {
       console.error("Update product error:", error);
@@ -253,6 +250,71 @@ export default function Home() {
       setIsLoadingCrud(false);
     }
   };
+
+  // --- Delete Product by Name ---
+  const handleDeleteProductByName = async (productNameToDelete: string) => {
+    if (!productNameToDelete.trim()) {
+        toast({
+            title: "Invalid Input",
+            description: "Please enter a product name to delete.",
+            variant: "destructive",
+        });
+        return;
+    }
+     if (!confirm(`Are you sure you want to delete ALL price entries for "${productNameToDelete}"? This cannot be undone.`)) {
+        return;
+      }
+
+    setIsLoadingDeleteProduct(true);
+    await new Promise(resolve => setTimeout(resolve, 700)); // Simulate API delay
+
+    try {
+        const productNameLower = productNameToDelete.toLowerCase();
+        const productsToDeleteCount = allProducts.filter(p => p.productName.toLowerCase() === productNameLower).length;
+
+        if (productsToDeleteCount === 0) {
+             toast({
+                title: "Product Not Found",
+                description: `No price entries found for "${productNameToDelete}".`,
+                variant: "default",
+            });
+            return; // Exit early if no products match
+        }
+
+        const updatedProducts = allProducts.filter(p => p.productName.toLowerCase() !== productNameLower);
+        setAllProducts(updatedProducts);
+
+        toast({
+            title: "Product Deleted",
+            description: `Successfully deleted ${productsToDeleteCount} price entries for "${productNameToDelete}".`,
+        });
+
+        // If the deleted product was the one being searched for, clear results
+        if (searchTerm.toLowerCase() === productNameLower) {
+            setSearchTerm(''); // Clear search term as well
+            setSearchResults([]);
+            setLowestPriceInfo(null);
+            setSearchError(null);
+            setLowestPriceError(null);
+        } else {
+            // Otherwise, just update the current search results if needed (though unlikely to change unless search term was very broad)
+             const refreshedResults = searchResults.filter(p => p.productName.toLowerCase() !== productNameLower);
+             setSearchResults(refreshedResults);
+             const lowest = findLowestPrice(refreshedResults);
+             setLowestPriceInfo(lowest);
+        }
+
+    } catch (error: any) {
+        console.error("Delete product by name error:", error);
+        toast({
+            title: "Error Deleting Product",
+            description: error.message || `Could not delete product "${productNameToDelete}".`,
+            variant: "destructive",
+        });
+    } finally {
+        setIsLoadingDeleteProduct(false);
+    }
+};
 
 
   return (
@@ -278,10 +340,10 @@ export default function Home() {
                 onChange={handleSearchChange}
                 className="w-full"
                 aria-label="Product Search Input"
-                disabled={isLoadingSearch || isLoadingLowest || isLoadingCrud}
+                disabled={isLoadingSearch || isLoadingLowest || isLoadingCrud || isLoadingDeleteProduct}
               />
             </div>
-            <Button type="submit" disabled={isLoadingSearch || isLoadingLowest || isLoadingCrud} className="w-full sm:w-auto">
+            <Button type="submit" disabled={isLoadingSearch || isLoadingLowest || isLoadingCrud || isLoadingDeleteProduct} className="w-full sm:w-auto">
               { (isLoadingSearch || isLoadingLowest) ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -295,29 +357,39 @@ export default function Home() {
         </CardContent>
       </Card>
 
-      {/* Add Product Section */}
-      <Card>
-        <CardHeader>
-          <div className="flex justify-between items-center">
-             <CardTitle>Manage Products</CardTitle>
-             <Button variant="outline" size="sm" onClick={() => setIsAddFormVisible(!isAddFormVisible)} disabled={isLoadingCrud}>
-                <PlusCircle className="mr-2 h-4 w-4" />
-                {isAddFormVisible ? 'Cancel Add' : 'Add New Price'}
-            </Button>
-          </div>
-           <CardDescription>
-            Add new product price entries to the tracker.
-          </CardDescription>
-        </CardHeader>
-        {isAddFormVisible && (
-          <CardContent>
-            <AddProductForm
-                onSubmit={handleAddProduct}
-                isLoading={isLoadingCrud}
-                onCancel={() => setIsAddFormVisible(false)} />
-          </CardContent>
-        )}
-      </Card>
+       {/* Manage Products Card (Add/Delete) */}
+       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Add Product Section */}
+          <Card>
+            <CardHeader>
+              <div className="flex justify-between items-center">
+                <CardTitle>Add Price Entry</CardTitle>
+                <Button variant="outline" size="sm" onClick={() => setIsAddFormVisible(!isAddFormVisible)} disabled={isLoadingCrud || isLoadingDeleteProduct}>
+                    <PlusCircle className="mr-2 h-4 w-4" />
+                    {isAddFormVisible ? 'Cancel Add' : 'Add New Price'}
+                </Button>
+              </div>
+              <CardDescription>
+                Add a new price listing for a product from a specific store.
+              </CardDescription>
+            </CardHeader>
+            {isAddFormVisible && (
+              <CardContent>
+                <AddProductForm
+                    onSubmit={handleAddProduct}
+                    isLoading={isLoadingCrud}
+                    onCancel={() => setIsAddFormVisible(false)} />
+              </CardContent>
+            )}
+          </Card>
+
+           {/* Delete Product Section */}
+            <DeleteProductSection
+                onDelete={handleDeleteProductByName}
+                isLoading={isLoadingDeleteProduct}
+                disabled={isLoadingCrud || isLoadingSearch || isLoadingLowest} // Disable if other actions are happening
+            />
+        </div>
 
 
       {/* Display Search Results and Lowest Price */}
@@ -348,7 +420,7 @@ export default function Home() {
                     <Info className="h-4 w-4" />
                     <AlertTitle>No Results</AlertTitle>
                     <AlertDescription>
-                      No price information found for "{searchTerm}". Try a different product name or add a new entry.
+                      No price information found for "{searchTerm}". Add a new entry using the form above.
                      </AlertDescription>
                 </Alert>
               )}
@@ -357,12 +429,16 @@ export default function Home() {
                     data={searchResults}
                     lowestPriceInfo={lowestPriceInfo}
                     onEdit={handleEditProduct}
-                    onDelete={handleDeleteProduct}
-                    isLoading={isLoadingCrud} />
+                    onDelete={handleDeleteSingleEntry} // Use the single entry delete handler
+                    isLoading={isLoadingCrud || isLoadingDeleteProduct} // Disable actions if either CRUD is happening
+                    />
               )}
                {!isLoadingSearch && searchResults.length === 0 && !searchError && !searchTerm && (
                  <div className="text-center text-muted-foreground p-6">
-                   Enter a product name above to see price comparisons, or add a new price entry.
+                   {allProducts.length > 0
+                    ? "Enter a product name above to see price comparisons, or add a new price entry."
+                    : "No products found. Use the 'Add Price Entry' section to start tracking prices."
+                   }
                  </div>
                )}
             </CardContent>
@@ -408,15 +484,13 @@ export default function Home() {
                     <AlertDescription>Could not determine the lowest price among the current results.</AlertDescription>
                   </Alert>
                )}
-               {!isLoadingLowest && !lowestPriceInfo && !lowestPriceError && !searchTerm && (
+               {!isLoadingLowest && !lowestPriceInfo && !lowestPriceError && (!searchTerm || (searchTerm && searchResults.length === 0)) && (
                   <div className="text-center text-muted-foreground p-4">
-                    Search for a product to find the lowest price.
+                    {searchTerm && searchResults.length === 0 && !searchError
+                        ? "No results to determine the lowest price."
+                        : "Search for a product to find the lowest price."
+                    }
                   </div>
-               )}
-               {!isLoadingLowest && !lowestPriceInfo && !lowestPriceError && searchTerm && searchResults.length === 0 && !searchError &&(
-                    <div className="text-center text-muted-foreground p-4">
-                        No results to determine the lowest price.
-                    </div>
                )}
             </CardContent>
           </Card>

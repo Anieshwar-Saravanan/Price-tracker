@@ -30,7 +30,7 @@ interface PriceTableProps {
   data: PriceEntry[];
   lowestPriceInfo: LowestPriceInfo | null;
   onEdit: (product: PriceEntry) => void; // Handler for editing
-  onDelete: (productId: string) => void; // Handler for deleting
+  onDelete: (entryId: string) => void; // Handler for deleting a single entry by its ID
   isLoading?: boolean; // To disable buttons during operations
 }
 
@@ -91,7 +91,7 @@ export function PriceTable({ data, lowestPriceInfo, onEdit, onDelete, isLoading 
                      `$${entry.price.toFixed(2)}`
                   )}
                 </TableCell>
-                 <TableCell className="text-right space-x-2">
+                 <TableCell className="text-right space-x-1"> {/* Reduced space */}
                     <Button
                         variant="ghost"
                         size="icon"
@@ -99,7 +99,7 @@ export function PriceTable({ data, lowestPriceInfo, onEdit, onDelete, isLoading 
                         onClick={() => onEdit(entry)}
                         disabled={isLoading}
                         aria-label={`Edit price for ${entry.productName} at ${entry.store}`}
-                        title="Edit"
+                        title="Edit Entry"
                     >
                         <Edit className="h-4 w-4" />
                     </Button>
@@ -107,10 +107,10 @@ export function PriceTable({ data, lowestPriceInfo, onEdit, onDelete, isLoading 
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        onClick={() => onDelete(entry.id)}
+                        onClick={() => onDelete(entry.id)} // Pass entry.id to onDelete
                         disabled={isLoading}
-                        aria-label={`Delete price for ${entry.productName} at ${entry.store}`}
-                        title="Delete"
+                        aria-label={`Delete price entry for ${entry.productName} at ${entry.store}`}
+                        title="Delete Entry"
                     >
                         <Trash2 className="h-4 w-4" />
                     </Button>
