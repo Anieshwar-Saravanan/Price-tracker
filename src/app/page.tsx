@@ -16,7 +16,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Loader2, AlertCircle, Info, PlusCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
-// --- Mock Data Structures ---
+// --- Mock Data Structures (Representing data that would be in AVL nodes) ---
 interface PriceEntry {
   id: string; // Unique ID for each entry
   productName: string;
@@ -29,8 +29,9 @@ interface LowestPriceInfo {
   price: number;
 }
 
-// --- Mock "Database" ---
-// Removed initial mock data as requested
+// --- Mock "Database" (Simulates data store, eventually replaced by AVL backed service) ---
+// In a real AVL implementation, `allProducts` might be managed by an AVL Tree class instance.
+// The tree would likely be keyed by `productName`, with each node containing a list of `PriceEntry` for that product.
 const initialMockData: PriceEntry[] = [];
 
 export default function Home() {
@@ -44,6 +45,7 @@ export default function Home() {
   const [lowestPriceError, setLowestPriceError] = useState<string | null>(null);
 
   // State for managing the mock "database"
+  // Represents the collection of all price entries, mirroring what the AVL tree would manage.
   const [allProducts, setAllProducts] = useState<PriceEntry[]>([]);
 
   // State for Add/Edit Modals/Forms
@@ -53,9 +55,10 @@ export default function Home() {
   const [isLoadingCrud, setIsLoadingCrud] = useState(false); // Loading state for add/edit/delete single entry
   const [isLoadingDeleteProduct, setIsLoadingDeleteProduct] = useState(false); // Specific loading for deleting all entries of a product
 
-  // Load initial data on mount (simulating fetching from backend)
+  // Load initial data on mount (simulating fetching from backend/AVL tree)
   useEffect(() => {
     // Simulate fetching data
+    // AVL Equivalent: Could involve traversing the tree to get all entries or loading from persistent storage.
     const timer = setTimeout(() => {
       setAllProducts(initialMockData);
       // If there's an initial search term or default view needed, perform search
@@ -68,10 +71,13 @@ export default function Home() {
     setSearchTerm(e.target.value);
   };
 
-  // --- Mock API Call Functions (Simulate Backend Interaction) ---
+  // --- Mock API Call Functions (Simulate Backend/AVL Tree Interaction) ---
 
   // Simulates searching within the `allProducts` state
   const fetchSearchResults = async (productName: string): Promise<PriceEntry[]> => {
+    // AVL Equivalent: Search the AVL tree for the node keyed by `productName`.
+    // If found, return the list of PriceEntry objects stored in that node.
+    // Time Complexity: O(log N) to find the node, where N is the number of unique products.
     setIsLoadingSearch(true);
     setSearchError(null);
     setSearchResults([]); // Clear previous results
@@ -81,6 +87,7 @@ export default function Home() {
        if (productName.toLowerCase() === 'error') {
         throw new Error('Simulated server error during search.');
       }
+      // Current Array Implementation: Filter the array. O(M) where M is total price entries.
       const results = allProducts.filter(p =>
         p.productName.toLowerCase().includes(productName.toLowerCase())
       );
@@ -100,7 +107,13 @@ export default function Home() {
 
   // Simulates finding the lowest price from search results
   const findLowestPrice = (results: PriceEntry[]): LowestPriceInfo | null => {
+    // AVL Equivalent: This operation would likely happen *after* retrieving the list
+    // of entries from the relevant product node found via search (O(log N)).
+    // Iterating through the list within the node takes O(K) time, where K is the number
+    // of price entries for *that specific product*.
+    // Total time: O(log N + K).
     if (!results || results.length === 0) return null;
+    // Current Array Implementation: Reduce the filtered array. O(K).
     return results.reduce((lowest, current) => {
         if (!lowest || current.price < lowest.price) {
             return { store: current.store, price: current.price };
@@ -120,6 +133,7 @@ export default function Home() {
     }
     const trimmedSearchTerm = searchTerm.trim();
 
+    // AVL: Call AVL search function.
     const results = await fetchSearchResults(trimmedSearchTerm);
     setSearchResults(results);
 
@@ -127,6 +141,7 @@ export default function Home() {
     setIsLoadingLowest(true); // Simulate loading for lowest price calculation
     setLowestPriceError(null);
     await new Promise(resolve => setTimeout(resolve, 200)); // Short delay for effect
+    // AVL: Call findLowestPrice on the results from the node.
     const lowest = findLowestPrice(results);
     if (results.length > 0 && !lowest) {
         setLowestPriceError("Could not determine the lowest price from results.");
@@ -135,9 +150,16 @@ export default function Home() {
     setIsLoadingLowest(false);
   };
 
-  // --- Mock CRUD Operations ---
+  // --- Mock CRUD Operations (Simulating AVL interactions) ---
 
   const handleAddProduct = async (newProductData: Omit<PriceEntry, 'id'>) => {
+    // AVL Equivalent:
+    // 1. Search for the node keyed by `newProductData.productName` (O(log N)).
+    // 2. If the node exists, add the new `PriceEntry` to the list within the node (O(1) or O(K) depending on list impl).
+    // 3. If the node doesn't exist, insert a new node into the AVL tree (O(log N)).
+    //    - Insertion involves creating the node with the `productName` and a list containing the new `PriceEntry`.
+    //    - **Balancing:** After insertion, check the balance factor of ancestors. Perform rotations (single or double) if the tree becomes unbalanced (violates height-balancing property where height difference between left/right subtrees is > 1) to maintain O(log N) height.
+    // 4. Update React state with the modified tree/data.
     setIsLoadingCrud(true);
     await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API delay
     try {
@@ -145,6 +167,7 @@ export default function Home() {
             ...newProductData,
             id: Date.now().toString(), // Simple unique ID generation
         };
+        // Current Array Implementation: Append to array. O(1) on average.
         const updatedProducts = [...allProducts, newProduct];
         setAllProducts(updatedProducts);
         setIsAddFormVisible(false); // Hide form on success
@@ -172,26 +195,37 @@ export default function Home() {
   };
 
  const handleEditProduct = (product: PriceEntry) => {
+    // AVL Equivalent: This action primarily sets UI state. The actual update happens in `handleSaveEdit`.
+    // No direct AVL operation here, but it prepares data for the update.
     setEditingProduct(product);
     setIsEditModalOpen(true);
   };
 
-  const handleDeleteSingleEntry = async (productId: string) => {
+  const handleDeleteSingleEntry = async (entryId: string) => {
+    // AVL Equivalent:
+    // 1. Need to know the `productName` associated with `entryId`. (Requires finding the entry first in the current mock, or storing productName with ID).
+    // 2. Search the AVL tree for the node keyed by `productName` (O(log N)).
+    // 3. If the node exists, find and remove the `PriceEntry` with the matching `entryId` from the list within the node (O(K)).
+    // 4. **Important:** If removing this entry makes the list empty, you *might* consider deleting the entire node from the AVL tree.
+    //    - Node Deletion (O(log N)): Standard BST deletion followed by rebalancing.
+    //    - **Balancing:** After deletion, check balance factors of ancestors upwards from the deletion point. Perform rotations as needed to restore the AVL property.
+    // 5. Update React state.
      if (!confirm('Are you sure you want to delete this specific price entry?')) {
         return;
       }
     setIsLoadingCrud(true);
     await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API delay
      try {
-        const productToDelete = allProducts.find(p => p.id === productId);
-        const updatedProducts = allProducts.filter(p => p.id !== productId);
+        const productToDelete = allProducts.find(p => p.id === entryId);
+        // Current Array Implementation: Filter the array. O(M).
+        const updatedProducts = allProducts.filter(p => p.id !== entryId);
         setAllProducts(updatedProducts);
         toast({
             title: "Price Entry Deleted",
             description: `Entry for ${productToDelete?.productName} from ${productToDelete?.store} removed.`,
         });
          // Refresh search results if the deleted product was showing
-        const updatedSearchResults = searchResults.filter(p => p.id !== productId);
+        const updatedSearchResults = searchResults.filter(p => p.id !== entryId);
         setSearchResults(updatedSearchResults);
         // Re-calculate lowest price
         const lowest = findLowestPrice(updatedSearchResults);
@@ -210,9 +244,20 @@ export default function Home() {
   };
 
  const handleSaveEdit = async (updatedProduct: PriceEntry) => {
+    // AVL Equivalent:
+    // 1. Search for the node keyed by the *original* `productName` if it might have changed, or just the current `updatedProduct.productName` if the key (product name) is immutable for edits. Assume productName can change here for complexity.
+    // 2. If productName *has not* changed:
+    //    a. Find the node (O(log N)).
+    //    b. Find the specific `PriceEntry` by `id` within the node's list (O(K)).
+    //    c. Update the entry's `store` and `price` (O(1) after finding).
+    // 3. If productName *has* changed:
+    //    a. Delete the old entry: Search old node (O(log N)), remove from list (O(K)). Potential node deletion + rebalancing if list becomes empty (O(log N)).
+    //    b. Add the new entry: Search new node (O(log N)), add to list (O(K)) or insert new node + rebalance (O(log N)).
+    // 4. Update React state.
     setIsLoadingCrud(true);
     await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API delay
     try {
+      // Current Array Implementation: Map and replace. O(M).
       const updatedProducts = allProducts.map(p =>
         p.id === updatedProduct.id ? updatedProduct : p
       );
@@ -253,6 +298,13 @@ export default function Home() {
 
   // --- Delete Product by Name ---
   const handleDeleteProductByName = async (productNameToDelete: string) => {
+    // AVL Equivalent:
+    // 1. Search for the node keyed by `productNameToDelete` (O(log N)).
+    // 2. If the node is found, perform AVL node deletion (O(log N)).
+    //    - This involves standard BST deletion (finding successor/predecessor if needed).
+    //    - **Balancing:** After deletion, traverse up from the deletion point, checking balance factors and performing necessary rotations (single or double) to restore the AVL height-balancing property.
+    // 3. If the node is not found, do nothing.
+    // 4. Update React state.
     if (!productNameToDelete.trim()) {
         toast({
             title: "Invalid Input",
@@ -278,9 +330,11 @@ export default function Home() {
                 description: `No price entries found for "${productNameToDelete}".`,
                 variant: "default",
             });
-            return; // Exit early if no products match
+             setIsLoadingDeleteProduct(false); // Added to stop loading state
+             return; // Exit early if no products match
         }
 
+        // Current Array Implementation: Filter the array. O(M).
         const updatedProducts = allProducts.filter(p => p.productName.toLowerCase() !== productNameLower);
         setAllProducts(updatedProducts);
 
@@ -325,6 +379,7 @@ export default function Home() {
       <Card>
         <CardHeader>
           <CardTitle>Find Prices</CardTitle>
+          {/* AVL: Search operation uses the tree's O(log N) search. */}
         </CardHeader>
         <CardContent>
            <form onSubmit={handleSearchSubmit} className="flex flex-col sm:flex-row gap-4 sm:items-end">
@@ -364,6 +419,7 @@ export default function Home() {
             <CardHeader>
               <div className="flex justify-between items-center">
                 <CardTitle>Add Price Entry</CardTitle>
+                {/* AVL: Triggers insert operation, potentially involving balancing. */}
                 <Button variant="outline" size="sm" onClick={() => setIsAddFormVisible(!isAddFormVisible)} disabled={isLoadingCrud || isLoadingDeleteProduct}>
                     <PlusCircle className="mr-2 h-4 w-4" />
                     {isAddFormVisible ? 'Cancel Add' : 'Add New Price'}
@@ -384,6 +440,7 @@ export default function Home() {
           </Card>
 
            {/* Delete Product Section */}
+           {/* AVL: Triggers delete operation on the entire node, involving balancing. */}
             <DeleteProductSection
                 onDelete={handleDeleteProductByName}
                 isLoading={isLoadingDeleteProduct}
@@ -400,6 +457,7 @@ export default function Home() {
             <CardHeader>
               <CardTitle>Price Comparison</CardTitle>
                {searchTerm && <CardDescription>Showing results for: "{searchTerm}"</CardDescription>}
+               {/* AVL: Displays results retrieved from the AVL node. */}
             </CardHeader>
             <CardContent>
               {isLoadingSearch && (
@@ -428,8 +486,8 @@ export default function Home() {
                 <PriceTable
                     data={searchResults}
                     lowestPriceInfo={lowestPriceInfo}
-                    onEdit={handleEditProduct}
-                    onDelete={handleDeleteSingleEntry} // Use the single entry delete handler
+                    onEdit={handleEditProduct} // AVL: Edit might involve delete+insert if productName changes.
+                    onDelete={handleDeleteSingleEntry} // AVL: Deletes specific entry from node list, potentially node itself + rebalance.
                     isLoading={isLoadingCrud || isLoadingDeleteProduct} // Disable actions if either CRUD is happening
                     />
               )}
@@ -452,6 +510,7 @@ export default function Home() {
             <CardHeader>
               <CardTitle>Lowest Price</CardTitle>
               {searchTerm && searchResults.length > 0 && <CardDescription>Best deal for "{searchTerm}"</CardDescription>}
+              {/* AVL: Derived from the list of entries in the found AVL node. */}
             </CardHeader>
             <CardContent>
               {isLoadingLowest && (
@@ -500,6 +559,7 @@ export default function Home() {
 
 
       {/* Edit Product Modal */}
+      {/* AVL: Saving changes here triggers the `handleSaveEdit` function and its AVL operations. */}
       {editingProduct && (
         <EditProductModal
           product={editingProduct}
