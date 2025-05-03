@@ -20,8 +20,8 @@ import { useEffect } from 'react';
 
 // Define the Zod schema for form validation
 const formSchema = z.object({
-  productName: z.string().min(1, { message: "Product name is required." }).max(100),
-  store: z.string().min(1, { message: "Store name is required." }).max(50),
+  productName: z.string().min(1, { message: "Product name is required." }).max(100).trim(),
+  store: z.string().min(1, { message: "Store name is required." }).max(50).trim(),
   price: z.coerce // Use coerce to handle string input from number field
     .number({ invalid_type_error: "Price must be a number." })
     .positive({ message: "Price must be positive." })
@@ -56,9 +56,15 @@ export function AddProductForm({ onSubmit, isLoading, onCancel }: AddProductForm
 
 
   const handleFormSubmit: SubmitHandler<FormData> = async (data) => {
-    await onSubmit(data);
-    // Don't reset here, onSubmit completion should handle visibility/state
-    // form.reset(); // Removed reset from here, handled by parent/effect
+    // Trim data before submitting
+    const trimmedData = {
+        ...data,
+        productName: data.productName.trim(),
+        store: data.store.trim(),
+    };
+    await onSubmit(trimmedData);
+    // Let parent decide whether to clear/reset based on success/failure
+    // If submission is successful, parent hides the form, triggering useEffect cleanup which resets.
   };
 
   return (
@@ -104,8 +110,12 @@ export function AddProductForm({ onSubmit, isLoading, onCancel }: AddProductForm
                     step="0.01" // Allow decimals
                     {...field}
                     // value={field.value === 0 ? '' : field.value} // Handle display of initial 0
-                    onChange={(e) => field.onChange(e.target.value === '' ? '' : parseFloat(e.target.value))} // Parse float on change
-                    disabled={isLoading}
+                    onChange={(e) => {
+                         // Allow empty string for clearing, otherwise parse
+                        const value = e.target.value;
+                        field.onChange(value === '' ? '' : parseFloat(value));
+                    }}
+                     disabled={isLoading}
                 />
               </FormControl>
               <FormMessage />

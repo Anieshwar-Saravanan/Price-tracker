@@ -30,7 +30,7 @@ interface PriceTableProps {
   data: PriceEntry[];
   lowestPriceInfo: LowestPriceInfo | null;
   onEdit: (product: PriceEntry) => void; // Handler for editing
-  onDelete: (entryId: string) => void; // Handler for deleting a single entry by its ID
+  onDeleteEntry: (entryId: string) => void; // Handler for deleting a single entry by its ID (renamed)
   isLoading?: boolean; // To disable buttons during operations
 }
 
@@ -40,7 +40,7 @@ const getStoreIcon = (storeName: string) => {
   return <Store className="inline-block h-5 w-5 mr-2 text-muted-foreground" aria-label={`${storeName} icon`} />;
 };
 
-export function PriceTable({ data, lowestPriceInfo, onEdit, onDelete, isLoading = false }: PriceTableProps) {
+export function PriceTable({ data, lowestPriceInfo, onEdit, onDeleteEntry, isLoading = false }: PriceTableProps) {
 
   // No need for the fade-in effect managed by useEffect here anymore if parent handles transitions
 
@@ -107,7 +107,7 @@ export function PriceTable({ data, lowestPriceInfo, onEdit, onDelete, isLoading 
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        onClick={() => onDelete(entry.id)} // Pass entry.id to onDelete
+                        onClick={() => onDeleteEntry(entry.id)} // Pass entry.id to onDeleteEntry
                         disabled={isLoading}
                         aria-label={`Delete price entry for ${entry.productName} at ${entry.store}`}
                         title="Delete Entry"

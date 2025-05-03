@@ -8,7 +8,7 @@ import { Header } from '@/components/layout/header';
 import { PriceTable } from '@/components/price-table';
 import { AddProductForm } from '@/components/add-product-form';
 import { EditProductModal } from '@/components/edit-product-modal';
-import { DeleteProductSection } from '@/components/delete-product-section'; // Import the new component
+import { DeleteSpecificEntrySection } from '@/components/delete-specific-entry-section'; // Import the renamed component
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -53,7 +53,7 @@ export default function Home() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<PriceEntry | null>(null);
   const [isLoadingCrud, setIsLoadingCrud] = useState(false); // Loading state for add/edit/delete single entry
-  const [isLoadingDeleteProduct, setIsLoadingDeleteProduct] = useState(false); // Specific loading for deleting all entries of a product
+  const [isLoadingDeleteSpecific, setIsLoadingDeleteSpecific] = useState(false); // Specific loading for deleting specific entry by name/store
 
   // Load initial data on mount (simulating fetching from backend/AVL tree)
   useEffect(() => {
@@ -163,6 +163,15 @@ export default function Home() {
     setIsLoadingCrud(true);
     await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API delay
     try {
+        // Check if an entry with the same product name and store already exists (case-insensitive)
+        const exists = allProducts.some(p =>
+            p.productName.toLowerCase() === newProductData.productName.toLowerCase() &&
+            p.store.toLowerCase() === newProductData.store.toLowerCase()
+        );
+        if (exists) {
+            throw new Error(`Price entry for "${newProductData.productName}" at "${newProductData.store}" already exists. You can edit it from the table.`);
+        }
+
         const newProduct: PriceEntry = {
             ...newProductData,
             id: Date.now().toString(), // Simple unique ID generation
@@ -201,7 +210,8 @@ export default function Home() {
     setIsEditModalOpen(true);
   };
 
-  const handleDeleteSingleEntry = async (entryId: string) => {
+  const handleDeleteSingleEntryFromTable = async (entryId: string) => {
+    // This function is triggered by the delete button in the PriceTable row
     // AVL Equivalent:
     // 1. Need to know the `productName` associated with `entryId`. (Requires finding the entry first in the current mock, or storing productName with ID).
     // 2. Search the AVL tree for the node keyed by `productName` (O(log N)).
@@ -217,6 +227,9 @@ export default function Home() {
     await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API delay
      try {
         const productToDelete = allProducts.find(p => p.id === entryId);
+        if (!productToDelete) {
+            throw new Error("Entry not found.");
+        }
         // Current Array Implementation: Filter the array. O(M).
         const updatedProducts = allProducts.filter(p => p.id !== entryId);
         setAllProducts(updatedProducts);
@@ -257,6 +270,21 @@ export default function Home() {
     setIsLoadingCrud(true);
     await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API delay
     try {
+       // Find the original product to check if the name/store combination has changed
+       const originalProduct = allProducts.find(p => p.id === updatedProduct.id);
+
+       // Check if the NEW name/store combination already exists in another entry
+       const conflictingEntryExists = allProducts.some(p =>
+           p.id !== updatedProduct.id && // Exclude the current entry being edited
+           p.productName.toLowerCase() === updatedProduct.productName.toLowerCase() &&
+           p.store.toLowerCase() === updatedProduct.store.toLowerCase()
+       );
+
+       if (conflictingEntryExists) {
+           throw new Error(`Another price entry for "${updatedProduct.productName}" at "${updatedProduct.store}" already exists.`);
+       }
+
+
       // Current Array Implementation: Map and replace. O(M).
       const updatedProducts = allProducts.map(p =>
         p.id === updatedProduct.id ? updatedProduct : p
@@ -276,10 +304,11 @@ export default function Home() {
           const lowest = findLowestPrice(refreshedResults);
           setLowestPriceInfo(lowest);
       } else if (searchResults.some(p => p.id === updatedProduct.id)) {
-          // If the product was in results but name changed, remove it from current results
-          const filteredResults = searchResults.filter(p => p.id !== updatedProduct.id);
-           setSearchResults(filteredResults);
-           const lowest = findLowestPrice(filteredResults);
+          // If the product was in results but name changed, remove it from current results if it no longer matches
+          // OR update it if the name still matches
+           const refreshedResults = await fetchSearchResults(searchTerm); // Re-fetch to be safe
+           setSearchResults(refreshedResults);
+           const lowest = findLowestPrice(refreshedResults);
            setLowestPriceInfo(lowest);
       }
 
@@ -296,77 +325,75 @@ export default function Home() {
     }
   };
 
-  // --- Delete Product by Name ---
-  const handleDeleteProductByName = async (productNameToDelete: string) => {
+  // --- Delete Specific Entry by Name and Store ---
+  const handleDeleteSpecificEntry = async (productName: string, storeName: string) => {
     // AVL Equivalent:
-    // 1. Search for the node keyed by `productNameToDelete` (O(log N)).
-    // 2. If the node is found, perform AVL node deletion (O(log N)).
-    //    - This involves standard BST deletion (finding successor/predecessor if needed).
-    //    - **Balancing:** After deletion, traverse up from the deletion point, checking balance factors and performing necessary rotations (single or double) to restore the AVL height-balancing property.
-    // 3. If the node is not found, do nothing.
-    // 4. Update React state.
-    if (!productNameToDelete.trim()) {
+    // 1. Search for the node keyed by `productName` (O(log N)).
+    // 2. If the node exists, find the `PriceEntry` with the matching `storeName` (case-insensitive) in the list (O(K)).
+    // 3. If found, remove it from the list (O(K)).
+    // 4. If removing the entry makes the list empty, potentially delete the node itself + rebalance (O(log N)).
+    // 5. Update React state.
+    if (!productName.trim() || !storeName.trim()) {
         toast({
             title: "Invalid Input",
-            description: "Please enter a product name to delete.",
+            description: "Please enter both product name and store name to delete.",
             variant: "destructive",
         });
         return;
     }
-     if (!confirm(`Are you sure you want to delete ALL price entries for "${productNameToDelete}"? This cannot be undone.`)) {
+     if (!confirm(`Are you sure you want to delete the price entry for "${productName}" from "${storeName}"? This cannot be undone.`)) {
         return;
       }
 
-    setIsLoadingDeleteProduct(true);
+    setIsLoadingDeleteSpecific(true);
     await new Promise(resolve => setTimeout(resolve, 700)); // Simulate API delay
 
     try {
-        const productNameLower = productNameToDelete.toLowerCase();
-        const productsToDeleteCount = allProducts.filter(p => p.productName.toLowerCase() === productNameLower).length;
+        const productNameLower = productName.toLowerCase();
+        const storeNameLower = storeName.toLowerCase();
 
-        if (productsToDeleteCount === 0) {
+        const entryToDelete = allProducts.find(p =>
+            p.productName.toLowerCase() === productNameLower &&
+            p.store.toLowerCase() === storeNameLower
+        );
+
+        if (!entryToDelete) {
              toast({
-                title: "Product Not Found",
-                description: `No price entries found for "${productNameToDelete}".`,
+                title: "Entry Not Found",
+                description: `No price entry found for "${productName}" at "${storeName}".`,
                 variant: "default",
             });
-             setIsLoadingDeleteProduct(false); // Added to stop loading state
-             return; // Exit early if no products match
+             setIsLoadingDeleteSpecific(false); // Stop loading state
+             return; // Exit early
         }
 
         // Current Array Implementation: Filter the array. O(M).
-        const updatedProducts = allProducts.filter(p => p.productName.toLowerCase() !== productNameLower);
+        const updatedProducts = allProducts.filter(p => p.id !== entryToDelete.id);
         setAllProducts(updatedProducts);
 
         toast({
-            title: "Product Deleted",
-            description: `Successfully deleted ${productsToDeleteCount} price entries for "${productNameToDelete}".`,
+            title: "Price Entry Deleted",
+            description: `Successfully deleted price entry for "${productName}" from "${storeName}".`,
         });
 
-        // If the deleted product was the one being searched for, clear results
-        if (searchTerm.toLowerCase() === productNameLower) {
-            setSearchTerm(''); // Clear search term as well
-            setSearchResults([]);
-            setLowestPriceInfo(null);
-            setSearchError(null);
-            setLowestPriceError(null);
-        } else {
-            // Otherwise, just update the current search results if needed (though unlikely to change unless search term was very broad)
-             const refreshedResults = searchResults.filter(p => p.productName.toLowerCase() !== productNameLower);
-             setSearchResults(refreshedResults);
-             const lowest = findLowestPrice(refreshedResults);
-             setLowestPriceInfo(lowest);
+        // Refresh search results if the deleted product was showing
+        if (searchResults.some(p => p.id === entryToDelete.id)) {
+            const updatedSearchResults = searchResults.filter(p => p.id !== entryToDelete.id);
+            setSearchResults(updatedSearchResults);
+            // Re-calculate lowest price
+            const lowest = findLowestPrice(updatedSearchResults);
+            setLowestPriceInfo(lowest);
         }
 
     } catch (error: any) {
-        console.error("Delete product by name error:", error);
+        console.error("Delete specific entry error:", error);
         toast({
-            title: "Error Deleting Product",
-            description: error.message || `Could not delete product "${productNameToDelete}".`,
+            title: "Error Deleting Entry",
+            description: error.message || `Could not delete entry for "${productName}" from "${storeName}".`,
             variant: "destructive",
         });
     } finally {
-        setIsLoadingDeleteProduct(false);
+        setIsLoadingDeleteSpecific(false);
     }
 };
 
@@ -395,10 +422,10 @@ export default function Home() {
                 onChange={handleSearchChange}
                 className="w-full"
                 aria-label="Product Search Input"
-                disabled={isLoadingSearch || isLoadingLowest || isLoadingCrud || isLoadingDeleteProduct}
+                disabled={isLoadingSearch || isLoadingLowest || isLoadingCrud || isLoadingDeleteSpecific}
               />
             </div>
-            <Button type="submit" disabled={isLoadingSearch || isLoadingLowest || isLoadingCrud || isLoadingDeleteProduct} className="w-full sm:w-auto">
+            <Button type="submit" disabled={isLoadingSearch || isLoadingLowest || isLoadingCrud || isLoadingDeleteSpecific} className="w-full sm:w-auto">
               { (isLoadingSearch || isLoadingLowest) ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -412,7 +439,7 @@ export default function Home() {
         </CardContent>
       </Card>
 
-       {/* Manage Products Card (Add/Delete) */}
+       {/* Manage Products Card (Add/Delete Specific) */}
        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Add Product Section */}
           <Card>
@@ -420,13 +447,13 @@ export default function Home() {
               <div className="flex justify-between items-center">
                 <CardTitle>Add Price Entry</CardTitle>
                 {/* AVL: Triggers insert operation, potentially involving balancing. */}
-                <Button variant="outline" size="sm" onClick={() => setIsAddFormVisible(!isAddFormVisible)} disabled={isLoadingCrud || isLoadingDeleteProduct}>
+                <Button variant="outline" size="sm" onClick={() => setIsAddFormVisible(!isAddFormVisible)} disabled={isLoadingCrud || isLoadingDeleteSpecific}>
                     <PlusCircle className="mr-2 h-4 w-4" />
                     {isAddFormVisible ? 'Cancel Add' : 'Add New Price'}
                 </Button>
               </div>
               <CardDescription>
-                Add a new price listing for a product from a specific store.
+                Add a new price listing for a product from a specific store. Entry must be unique (Product + Store).
               </CardDescription>
             </CardHeader>
             {isAddFormVisible && (
@@ -439,11 +466,11 @@ export default function Home() {
             )}
           </Card>
 
-           {/* Delete Product Section */}
-           {/* AVL: Triggers delete operation on the entire node, involving balancing. */}
-            <DeleteProductSection
-                onDelete={handleDeleteProductByName}
-                isLoading={isLoadingDeleteProduct}
+           {/* Delete Specific Entry Section */}
+           {/* AVL: Triggers delete operation on a specific entry within a node, potentially involving balancing. */}
+            <DeleteSpecificEntrySection
+                onDelete={handleDeleteSpecificEntry}
+                isLoading={isLoadingDeleteSpecific}
                 disabled={isLoadingCrud || isLoadingSearch || isLoadingLowest} // Disable if other actions are happening
             />
         </div>
@@ -487,8 +514,8 @@ export default function Home() {
                     data={searchResults}
                     lowestPriceInfo={lowestPriceInfo}
                     onEdit={handleEditProduct} // AVL: Edit might involve delete+insert if productName changes.
-                    onDelete={handleDeleteSingleEntry} // AVL: Deletes specific entry from node list, potentially node itself + rebalance.
-                    isLoading={isLoadingCrud || isLoadingDeleteProduct} // Disable actions if either CRUD is happening
+                    onDelete={handleDeleteSingleEntryFromTable} // AVL: Deletes specific entry from node list, potentially node itself + rebalance.
+                    isLoading={isLoadingCrud || isLoadingDeleteSpecific} // Disable actions if either CRUD is happening
                     />
               )}
                {!isLoadingSearch && searchResults.length === 0 && !searchError && !searchTerm && (

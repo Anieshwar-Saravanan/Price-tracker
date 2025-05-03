@@ -30,8 +30,8 @@ import { Loader2 } from 'lucide-react';
 // Define the Zod schema for form validation
 const formSchema = z.object({
   id: z.string(), // Include ID, but it won't be editable in the form usually
-  productName: z.string().min(1, { message: "Product name is required." }).max(100),
-  store: z.string().min(1, { message: "Store name is required." }).max(50),
+  productName: z.string().min(1, { message: "Product name is required." }).max(100).trim(),
+  store: z.string().min(1, { message: "Store name is required." }).max(50).trim(),
   price: z.coerce
     .number({ invalid_type_error: "Price must be a number." })
     .positive({ message: "Price must be positive." })
@@ -76,13 +76,19 @@ export function EditProductModal({ product, isOpen, onClose, onSave, isLoading }
 
 
   const handleFormSubmit: SubmitHandler<FormData> = async (data) => {
-    await onSave(data);
-    // onClose(); // Let the parent handle closing on successful save
+     // Trim data before submitting
+     const trimmedData = {
+        ...data,
+        productName: data.productName.trim(),
+        store: data.store.trim(),
+    };
+    await onSave(trimmedData);
+    // Let the parent handle closing on successful save/error handling
   };
 
   // Handle closing the dialog via the 'x' button or overlay click
   const handleOpenChange = (open: boolean) => {
-    if (!open) {
+    if (!open && !isLoading) { // Prevent closing while loading
       onClose(); // Call the onClose prop when the dialog is closed
     }
   };
@@ -94,7 +100,7 @@ export function EditProductModal({ product, isOpen, onClose, onSave, isLoading }
         <DialogHeader>
           <DialogTitle>Edit Price Entry</DialogTitle>
           <DialogDescription>
-            Make changes to the product's price information. Click save when you're done.
+            Make changes to the product's price information. Click save when you're done. Entry must be unique (Product + Store).
           </DialogDescription>
         </DialogHeader>
          <Form {...form}>
@@ -140,7 +146,10 @@ export function EditProductModal({ product, isOpen, onClose, onSave, isLoading }
                             placeholder="e.g., 29.99"
                             step="0.01"
                             {...field}
-                             onChange={(e) => field.onChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                             onChange={(e) => {
+                                const value = e.target.value;
+                                field.onChange(value === '' ? '' : parseFloat(value));
+                            }}
                              disabled={isLoading}
                          />
                     </FormControl>
